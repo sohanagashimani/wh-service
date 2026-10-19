@@ -2,10 +2,7 @@ name: PROD - deploy-to-cloud-run
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
+
 
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'rep-tracker-mvp' }}
