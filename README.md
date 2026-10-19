@@ -9,23 +9,17 @@ A lightweight, idempotent backend service built with **Node.js**, **TypeScript**
 The service handles webhook ingestion, persists the transaction, schedules background processing ~30 seconds in the future via Cloud Tasks, and returns `202 Accepted` promptly without blocking.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as Payment Provider
-    participant App as Cloud Run (wh-service)
-    participant DB as Supabase PostgreSQL
-    participant Tasks as Google Cloud Tasks
+graph LR
+    Client["Payment Provider"] -->|"1. POST /v1/webhooks/transactions"| App["Cloud Run (wh-service)"]
+    App -->|"2. INSERT (status: PROCESSING)"| DB[("Supabase PostgreSQL")]
+    App -->|"3. Schedule (+30s delay)"| Tasks["Google Cloud Tasks"]
+    App -.->|"4. HTTP 202 Accepted (<200ms)"| Client
 
-    Client->>App: POST /v1/webhooks/transactions
-    App->>DB: INSERT transaction (status: PROCESSING)
-    App->>Tasks: Enqueue Task (+30s delay, OIDC)
-    App-->>Client: 202 Accepted (<200ms)
+    Tasks -->|"5. POST /internal/process-transaction (after ~30s)"| App
+    App -->|"6. Atomic UPDATE (status: PROCESSED)"| DB
 
-    Note over Tasks,App: ~30 Seconds Delay
-
-    Tasks->>App: POST /internal/process-transaction
-    App->>DB: Atomic UPDATE (status: PROCESSED)
-    App-->>Tasks: 200 OK
+    Poller["Client / Poller"] -->|"GET /v1/transactions/:id"| App
+    App -->|"Read status"| DB
 ```
 
 ### Why this architecture?
