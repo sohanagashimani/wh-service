@@ -7,17 +7,15 @@ A lightweight, idempotent backend service built with TypeScript, Express, Supaba
 ## Architecture
 
 ```mermaid
-graph LR
-    Client["Payment Provider"] -->|"1. Webhook (POST)"| App["Cloud Run"]
-    App -->|"2. Insert PROCESSING"| DB[("Supabase")]
-    App -->|"3. Schedule +30s"| Tasks["Cloud Tasks"]
-    App -.->|"4. 202 Accepted"| Client
+flowchart TD
+    Client["Payment Provider"] -->|"1. POST /v1/webhooks/transactions"| Webhook["Cloud Run Intake"]
+    Webhook -.->|"2. HTTP 202 Accepted (<200ms)"| Client
+    
+    Webhook -->|"3. INSERT (status: PROCESSING)"| DB[("Supabase PostgreSQL")]
+    Webhook -->|"4. Schedule task (+30s delay)"| Tasks["Google Cloud Tasks"]
 
-    Tasks -->|"5. Trigger after 30s"| App
-    App -->|"6. Update PROCESSED"| DB
-
-    Poller["Client"] -->|"GET status"| App
-    App -->|"Read status"| DB
+    Tasks -->|"5. POST /internal/process-transaction"| Handler["Cloud Run Task Handler"]
+    Handler -->|"6. Atomic UPDATE (status: PROCESSED)"| DB
 ```
 
 ---
