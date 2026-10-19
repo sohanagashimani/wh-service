@@ -1,0 +1,133 @@
+{
+  "info": {
+    "_postman_id": "a695699c-4aaa-4eb7-8983-92201dd430d6",
+    "name": "Transaction Webhook Service (Cloud Run)",
+    "description": "Postman collection for testing the transaction webhook intake and background processing service deployed on Google Cloud Run.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://wh-service-1030321645310.asia-south1.run.app",
+      "type": "string"
+    },
+    {
+      "key": "testTxnId",
+      "value": "txn_postman_test_101",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/",
+          "host": ["{{baseUrl}}"],
+          "path": [""]
+        },
+        "description": "Returns HTTP 200 with HEALTHY status and current dynamic UTC ISO 8601 timestamp."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Ingest Transaction Webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"transaction_id\": \"{{testTxnId}}\",\n  \"source_account\": \"acc_user_101\",\n  \"destination_account\": \"acc_merchant_202\",\n  \"amount\": 1500,\n  \"currency\": \"INR\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/webhooks/transactions",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "webhooks", "transactions"]
+        },
+        "description": "Ingests transaction webhook, saves to Supabase (PROCESSING), schedules Cloud Task ~30s in future, and immediately returns HTTP 202 Accepted (<500ms)."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Transaction Status (Immediate / After 30s)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/transactions/{{testTxnId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "transactions", "{{testTxnId}}"]
+        },
+        "description": "Retrieve transaction status. Immediately returns 'PROCESSING' with processed_at: null. After ~30 seconds, returns 'PROCESSED' with processed_at populated."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Duplicate Webhook (Idempotency Check)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"transaction_id\": \"{{testTxnId}}\",\n  \"source_account\": \"acc_user_101\",\n  \"destination_account\": \"acc_merchant_202\",\n  \"amount\": 1500,\n  \"currency\": \"INR\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/webhooks/transactions",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "webhooks", "transactions"]
+        },
+        "description": "Tests duplicate webhook handling. Gracefully returns HTTP 202 without creating duplicate rows or duplicate tasks."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Validation Error (Negative Amount)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"transaction_id\": \"txn_invalid_001\",\n  \"source_account\": \"acc_user_101\",\n  \"destination_account\": \"acc_merchant_202\",\n  \"amount\": -500,\n  \"currency\": \"INR\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/webhooks/transactions",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "webhooks", "transactions"]
+        },
+        "description": "Tests validation rejection. Returns HTTP 400 with detailed validation errors."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Missing Transaction (404 Not Found)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/transactions/txn_non_existent_999",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "transactions", "txn_non_existent_999"]
+        },
+        "description": "Tests missing transaction lookup. Returns HTTP 404 Not Found."
+      },
+      "response": []
+    }
+  ]
+}

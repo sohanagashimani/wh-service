@@ -1,0 +1,85 @@
+name: PROD - deploy-to-cloud-run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'rep-tracker-mvp' }}
+  SERVICE: wh-service
+  REGION: ${{ vars.GCP_REGION || 'asia-south1' }}
+  CLOUD_TASKS_QUEUE: transaction-tasks
+  CLOUD_TASKS_SERVICE_ACCOUNT: ${{ vars.CLOUD_TASKS_SERVICE_ACCOUNT || 'claude-code@rep-tracker-mvp.iam.gserviceaccount.com' }}
+
+jobs:
+  deploy-to-cloud-run:
+    name: Build and deploy wh-service to Google Cloud Run
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies & run tests
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Supports Workload Identity Federation or Service Account Key secret
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          source: ./
+          region: ${{ env.REGION }}
+          env_vars: |
+            NODE_ENV=production
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SECRET_KEY }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            CLOUD_TASKS_QUEUE=${{ env.CLOUD_TASKS_QUEUE }}
+            CLOUD_TASKS_LOCATION=${{ env.REGION }}
+            CLOUD_TASKS_SERVICE_ACCOUNT_EMAIL=${{ env.CLOUD_TASKS_SERVICE_ACCOUNT }}
+            CLOUD_RUN_SERVICE_URL=https://wh-service-1030321645310.asia-south1.run.app
+
+      - name: Configure Cloud Run Invoker Permissions
+        run: |
+          # Allow public traffic to webhook intake & health endpoints
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --member="allUsers" \
+            --role="roles/run.invoker"
+
+          # Allow Cloud Tasks service account to invoke internal processing endpoint
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:${{ env.CLOUD_TASKS_SERVICE_ACCOUNT }}" \
+            --role="roles/run.invoker"
+
+      - name: Show Output
+        run: echo "Service URL: ${{ steps.deploy.outputs.url }}"
