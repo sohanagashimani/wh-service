@@ -9,7 +9,7 @@ A lightweight, idempotent backend service built with TypeScript, Express, Supaba
 ```mermaid
 flowchart TD
     Client["Payment Provider"] -->|"1. POST /v1/webhooks/transactions"| Webhook["Cloud Run Intake"]
-    Webhook -.->|"2. HTTP 202 Accepted (<200ms)"| Client
+    Webhook -.->|"2. HTTP 202 Accepted"| Client
     
     Webhook -->|"3. INSERT (status: PROCESSING)"| DB[("Supabase PostgreSQL")]
     Webhook -->|"4. Schedule task (+30s delay)"| Tasks["Google Cloud Tasks"]
@@ -17,6 +17,15 @@ flowchart TD
     Tasks -->|"5. POST /internal/process-transaction"| Handler["Cloud Run Task Handler"]
     Handler -->|"6. Atomic UPDATE (status: PROCESSED)"| DB
 ```
+
+---
+
+## Technical Choices
+
+- **Node.js + Express (TypeScript)**: Fast asynchronous I/O and strict compile-time type safety for resilient webhook handling.
+- **Supabase PostgreSQL**: Enforces database-level uniqueness on `transaction_id` and atomic conditional updates to guarantee idempotency.
+- **Google Cloud Tasks**: Managed durable queue providing delayed delivery (~30s), retries with backoff, and OIDC service account authentication without needing Redis or continuous workers.
+- **Google Cloud Run**: Serverless container runtime hosting both webhook intake and task handling in a single service that scales to zero when idle.
 
 ---
 
